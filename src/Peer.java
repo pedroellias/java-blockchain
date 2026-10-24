@@ -32,6 +32,7 @@ public final class Peer {
         this.addKnownPeer(SEED_IP, SEED_PORTA);
         this.addKnownPeer(this.ip, this.port);
 
+        // TODO: Peers normais precisam criar blockchains vazias
         this.blockchain = new Blockchain(DIFICULDADE);
     }
     
@@ -43,8 +44,11 @@ public final class Peer {
         this.server = new ServerSocket(SEED_PORTA);
         this.ip = SEED_IP;
         this.port = SEED_PORTA;
-
+        
         this.addKnownPeer(SEED_IP, SEED_PORTA);
+
+        // TODO: o peer seed precisa criar uma block chain especial que já começa com o bloco genesis e previousHash 0
+        this.blockchain = new Blockchain(DIFICULDADE);
     }
 
     // TODO: enviar a mensagem de verdade
@@ -120,12 +124,12 @@ public final class Peer {
     }
     
     public NetworkMessage sendBlockchainCopy() {
-        NetworkMessage m = new NetworkMessage(MessageType.GET_BLOCKCHAIN, this.blockchain.getSnapshot());
+        NetworkMessage m = new NetworkMessage(MessageType.BLOCKCHAIN_COPY, this.blockchain.getSnapshot());
         System.out.println("[" + name + "] enviou: " + m);
         return m;
     }
     
-    public void recvBlockchainCopy(NetworkMessage blockchainCopy) {
+    public NetworkMessage recvBlockchainCopy(NetworkMessage blockchainCopy) {
         @SuppressWarnings("unchecked")
         List<Block> payload = (List<Block>) blockchainCopy.getPayload();
 
@@ -134,10 +138,10 @@ public final class Peer {
         if (troca.accepted()) {
             // TODO: algo como a linha abaixo, para realmente trocar a lista. darwin vai encapsular no Blockchain
             // this.blockchain.chain = payload; 
+            return null;
         } else {
-            new NetworkMessage(MessageType.REJECT, troca.reason());
+            return new NetworkMessage(MessageType.REJECT, troca.reason());
         }
-
     }
 
     public final synchronized void addKnownPeer(String ip, int port) {
@@ -152,11 +156,17 @@ public final class Peer {
     public String getProtocolVersion() {
         return protocolVersion;
     }
+
+    public Blockchain getBlockchain() {
+        return this.blockchain;
+    }
     
     public static void main(String[] args) throws IOException {
         Peer B = new Peer();
         Peer A = new Peer("A", "V1.0");
         
+        System.out.println("\n --- FLUXO A ---");
+
         System.out.println(B.recvHello(A.sendHello()));
 
         NetworkMessage m = B.recvGetPeers(A.sendGetPeers());
@@ -164,5 +174,18 @@ public final class Peer {
 
         A.recvPeersList(m);
         System.out.println("lista de A: " + A.knownPeers);
+
+        System.out.println("\n --- FLUXO B ---");
+
+        NetworkMessage a = A.recvBlockchainCopy(B.recvGetBlockchain(A.sendGetBlockchain()));
+        System.out.println(a);
+        if (a == null) {
+            System.out.println("Bloco A recebeu a blockchain de B e a validou com sucesso");
+        } else if (a.getType() == MessageType.REJECT) {
+            System.out.println("Bloco A recebeu a blockchain de B e a rejeitou pois: " + a.getPayload());
+            System.out.println("Blockchain de A: " + A.getBlockchain());
+        } else {
+            System.out.println("!!!! essa linha não deveria ser imprimida");
+        }
     }
 }
