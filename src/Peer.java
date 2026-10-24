@@ -32,8 +32,7 @@ public final class Peer {
         this.addKnownPeer(SEED_IP, SEED_PORTA);
         this.addKnownPeer(this.ip, this.port);
 
-        // TODO: Peers normais precisam criar blockchains vazias
-        this.blockchain = new Blockchain(DIFICULDADE);
+        this.blockchain = null;
     }
     
     public Peer() throws IOException {
@@ -123,6 +122,7 @@ public final class Peer {
         return sendBlockchainCopy();
     }
     
+    // Não chamar sem que esse peer tenha uma blockchain (todo peer deve passar pelo fluxo A e B antes de operar normalmente)
     public NetworkMessage sendBlockchainCopy() {
         NetworkMessage m = new NetworkMessage(MessageType.BLOCKCHAIN_COPY, this.blockchain.getSnapshot());
         System.out.println("[" + name + "] enviou: " + m);
@@ -132,12 +132,14 @@ public final class Peer {
     public NetworkMessage recvBlockchainCopy(NetworkMessage blockchainCopy) {
         @SuppressWarnings("unchecked")
         List<Block> payload = (List<Block>) blockchainCopy.getPayload();
+        
+        if (this.blockchain == null) {
+            this.blockchain = new Blockchain(DIFICULDADE, payload);
+            return null;
+        }
 
-        // TODO: a função abaixo vai virar tryAndReplaceChain(), e irá trocar lá dentro, ao invés de só verificar
         ReplaceResult troca = this.blockchain.tryReplaceChain(payload);
         if (troca.accepted()) {
-            // TODO: algo como a linha abaixo, para realmente trocar a lista. darwin vai encapsular no Blockchain
-            // this.blockchain.chain = payload; 
             return null;
         } else {
             return new NetworkMessage(MessageType.REJECT, troca.reason());
@@ -177,15 +179,17 @@ public final class Peer {
 
         System.out.println("\n --- FLUXO B ---");
 
+        B.blockchain.addBlock("Dados do Bloco #2", () -> false);
+
         NetworkMessage a = A.recvBlockchainCopy(B.recvGetBlockchain(A.sendGetBlockchain()));
         System.out.println(a);
         if (a == null) {
             System.out.println("Bloco A recebeu a blockchain de B e a validou com sucesso");
         } else if (a.getType() == MessageType.REJECT) {
             System.out.println("Bloco A recebeu a blockchain de B e a rejeitou pois: " + a.getPayload());
-            System.out.println("Blockchain de A: " + A.getBlockchain());
         } else {
             System.out.println("!!!! essa linha não deveria ser imprimida");
         }
+        System.out.println("Blockchain de A: " + A.getBlockchain());
     }
 }

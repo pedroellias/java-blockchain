@@ -1,7 +1,7 @@
 import java.io.Serializable;
 import java.util.function.BooleanSupplier;
 
-public class Block implements Serializable {
+public final class Block implements Serializable {
 
     private static final long serialVersionUID = 13L;
 

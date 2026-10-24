@@ -4,12 +4,13 @@ import java.util.List;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
 
-public class Blockchain implements Serializable {
+public final class Blockchain implements Serializable {
 
     private static final long serialVersionUID = 100L;
 
     public static final Block GENESIS_BLOCK = new Block(0, "0", "Bloco Genesis", 0L);
 
+    @SuppressWarnings("serial")
     private final List<Block> chain;
     private final int difficulty;
     private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
@@ -21,17 +22,11 @@ public class Blockchain implements Serializable {
         this.chain.add(GENESIS_BLOCK);
     }
 
-    public Blockchain(int difficulty, List<Block> Genesis) {
+    public Blockchain(int difficulty, List<Block> chain) {
         this.difficulty = difficulty;
-        this.chain = new ArrayList<>();
-        String validationError = validate(Genesis, difficulty);
-        if (validationError != null) {
-            throw new IllegalArgumentException("Cadeia inicial inválida: " + validationError);
-        }
-
-        this.chain.addAll(Genesis);
+        this.chain = new ArrayList<>(chain);
     }
-
+    
     public int getDifficulty() {
         return difficulty;
     }
@@ -210,6 +205,12 @@ public class Blockchain implements Serializable {
         } catch (Exception e) {
             return "Cadeia com falhas: " + e.getClass().getSimpleName();
         }
+    }
+
+    
+    @Override
+    public String toString() {
+        return "Blockchain [chain=" + chain + ", \ndifficulty=" + difficulty + ", chainVersion=" + chainVersion + "]";
     }
 
     public enum MineResult {
