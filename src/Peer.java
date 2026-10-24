@@ -3,11 +3,13 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.util.ArrayList;
 
-public class Peer {
+public final class Peer {
     public static final int MAX_PEERS = 5;
     public static final String SEED_IP = "127.0.0.1";
     public static final int SEED_PORTA = 6767;
     public static final String SEED_PROTOCOL_VERSION = "V1.0";
+
+    public static final int DIFICULDADE = 2;
 
     private String name;
     private String protocolVersion;
@@ -16,25 +18,33 @@ public class Peer {
     private int port;
     private ServerSocket server;
 
+    private Blockchain blockchain;
+
     public Peer(String name, String protocolVersion) throws IOException {
         this.name = name;
         this.protocolVersion = protocolVersion;
         this.knownPeers = new ArrayList<>(MAX_PEERS);
-        this.knownPeers.add(SEED_IP + ":" + SEED_PORTA);
         
         this.server = new ServerSocket(0);
         this.port = server.getLocalPort();
+        this.ip = server.getInetAddress().getHostAddress();
+
+        this.addKnownPeer(SEED_IP, SEED_PORTA);
+        this.addKnownPeer(this.ip, this.port);
+
+        this.blockchain = new Blockchain(DIFICULDADE);
     }
     
     public Peer() throws IOException {
         this.name = "NodeSEED";
         this.protocolVersion = SEED_PROTOCOL_VERSION;
         this.knownPeers = new ArrayList<>(MAX_PEERS);
-        this.knownPeers.add(SEED_IP + ":" + SEED_PORTA);
-
+        
         this.server = new ServerSocket(SEED_PORTA);
         this.ip = SEED_IP;
         this.port = SEED_PORTA;
+
+        this.addKnownPeer(SEED_IP, SEED_PORTA);
     }
 
     // TODO: enviar a mensagem de verdade
@@ -69,10 +79,17 @@ public class Peer {
     // TODO: devo separar isso na função "sendPeersList() ou, por ela só acontecer em resposta à um recvGetPeers(), isso nao é necessário? 
     // no caso, como o PEERS_LIST é exclusivamente uma resposta de GET_PEERS, separar as funções talvez não seja necessário."
     public NetworkMessage recvGetPeers(NetworkMessage getPeers) {
-        return new NetworkMessage(MessageType.PEERS_LIST, this.knownPeers);
+        return sendPeersList();
     }
 
-    // retorna algo? acho que não
+    public NetworkMessage sendPeersList() {
+        NetworkMessage m = new NetworkMessage(MessageType.PEERS_LIST, this.knownPeers);
+        System.out.println("[" + name + "] enviou: " + m);
+        return m;
+    }
+
+    // Não haverá mensagem resposta ACK por parte do recebedor de PEERS_LIST
+    // decisão de troca de confiança <-> desempenho
     public void recvPeersList(NetworkMessage peersList) {
         @SuppressWarnings("unchecked")
         List<String> payload = (List<String>) peersList.getPayload();
@@ -83,16 +100,51 @@ public class Peer {
             String[] split = peer.split(":");
             String ip = split[0];
             int port = Integer.parseInt(split[1]);
+            
             if (ip.equals(this.ip) && port == this.port) continue;
-
+            
+            // TODO: abrir conexão com peer novo além de só adicioná-lo na lista.
             this.addKnownPeer(ip, port);
         }
     }
     
-    public synchronized void addKnownPeer(String ip, int port) {
-        this.knownPeers.add(ip + ":" + port);
+    
+    public NetworkMessage sendGetBlockchain() {
+        NetworkMessage m = new NetworkMessage(MessageType.GET_BLOCKCHAIN, null);
+        System.out.println("[" + name + "] enviou: " + m);
+        return m;
+    }
+    
+    public NetworkMessage recvGetBlockchain(NetworkMessage getBlockchain) {
+        return sendBlockchainCopy();
+    }
+    
+    public NetworkMessage sendBlockchainCopy() {
+        NetworkMessage m = new NetworkMessage(MessageType.GET_BLOCKCHAIN, this.blockchain.getSnapshot());
+        System.out.println("[" + name + "] enviou: " + m);
+        return m;
+    }
+    
+    public void recvBlockchainCopy(NetworkMessage blockchainCopy) {
+        @SuppressWarnings("unchecked")
+        List<Block> payload = (List<Block>) blockchainCopy.getPayload();
+
+        // TODO: a função abaixo vai virar tryAndReplaceChain(), e irá trocar lá dentro, ao invés de só verificar
+        ReplaceResult troca = this.blockchain.tryReplaceChain(payload);
+        if (troca.accepted()) {
+            // TODO: algo como a linha abaixo, para realmente trocar a lista. darwin vai encapsular no Blockchain
+            // this.blockchain.chain = payload; 
+        } else {
+            new NetworkMessage(MessageType.REJECT, troca.reason());
+        }
+
     }
 
+    public final synchronized void addKnownPeer(String ip, int port) {
+        // TODO: conexão com o socket novo é feita aqui ou separado?
+        this.knownPeers.add(ip + ":" + port);
+    }
+    
     public String getName() {
         return name;
     }
