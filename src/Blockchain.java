@@ -8,14 +8,12 @@ public class Blockchain implements Serializable {
 
     private static final long serialVersionUID = 100L;
 
-    private static final Block GENESIS_BLOCK = new Block(0, "0", "Bloco Genesis", 0L);
+    public static final Block GENESIS_BLOCK = new Block(0, "0", "Bloco Genesis", 0L);
 
     private final List<Block> chain;
     private final int difficulty;
     private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
     private volatile int chainVersion = 0;
-
-    private transient ChainUpdateListener listener;
 
     public Blockchain(int difficulty) {
         this.difficulty = difficulty;
@@ -23,8 +21,15 @@ public class Blockchain implements Serializable {
         this.chain.add(GENESIS_BLOCK);
     }
 
-    public void setChainUpdateListener(ChainUpdateListener listener) {
-        this.listener = listener;
+    public Blockchain(int difficulty, List<Block> Genesis) {
+        this.difficulty = difficulty;
+        this.chain = new ArrayList<>();
+        String validationError = validate(Genesis, difficulty);
+        if (validationError != null) {
+            throw new IllegalArgumentException("Cadeia inicial inválida: " + validationError);
+        }
+
+        this.chain.addAll(Genesis);
     }
 
     public int getDifficulty() {
@@ -59,9 +64,9 @@ public class Blockchain implements Serializable {
 
     /**
      * Mineração em Três Fases:
-     * Leitura do estado inicial sob Read Lock.
-     * Mineração fora do Lock (evita travar threads/rede).
-     * Confirmação e adição sob Write Lock caso a versão não tenha mudado.
+     * 1. Leitura do estado inicial sob Read Lock.
+     * 2. Mineração fora do Lock (evita travar threads/rede).
+     * 3. Confirmação e adição sob Write Lock caso a versão não tenha mudado.
      */
     public MineResult addBlock(String data, BooleanSupplier cancelled) {
         Block previousBlock;
@@ -80,7 +85,7 @@ public class Blockchain implements Serializable {
         long timeStamp = System.currentTimeMillis();
         Block newBlock = new Block(newIndex, previousBlock.getHash(), data, timeStamp);
 
-        //pedido externo OU mudança na versão da cadeia
+        // Pedido externo OU mudança na versão da cadeia
         BooleanSupplier combinedCancelled = () ->
                 (cancelled != null && cancelled.getAsBoolean()) || (this.chainVersion != versionAtStart);
 
@@ -93,32 +98,26 @@ public class Blockchain implements Serializable {
                     : MineResult.CANCELLED;
         }
 
-        List<Block> snapshotToNotify = null;
-
         // Gravação sob Write Lock
         rwLock.writeLock().lock();
         try {
             if (this.chainVersion == versionAtStart) {
                 this.chain.add(newBlock);
                 this.chainVersion++;
-                snapshotToNotify = new ArrayList<>(this.chain);
+                return MineResult.SUCCESS;
             } else {
                 return MineResult.DISCARDED_CHAIN_UPDATED;
             }
         } finally {
             rwLock.writeLock().unlock();
         }
-
-        // evitar deadlocks
-        if (snapshotToNotify != null) {
-            notifyListenerSafely(snapshotToNotify);
-            return MineResult.SUCCESS;
-        }
-
-        return MineResult.DISCARDED_CHAIN_UPDATED;
     }
 
-    public ReplaceResult tryReplaceChain(List<Block> recebida) { //Substituindo a blockchain
+    /**
+     * Substituição de cadeia totalmente encapsulada.
+     * Valida a lista recebida e, se for válida e estritamente maior, atualiza o estado sob Write Lock.
+     */
+    public ReplaceResult tryReplaceChain(List<Block> recebida) {
         // Cópia defensiva imediata
         if (recebida == null || recebida.isEmpty()) {
             return ReplaceResult.reject("Cadeia nula ou vazia");
@@ -131,9 +130,7 @@ public class Blockchain implements Serializable {
             return ReplaceResult.reject("Cadeia inválida: " + validationError);
         }
 
-        List<Block> snapshotToNotify = null;
-
-        //Comparação de tamanho e substituição sob Write Lock
+        // Comparação de tamanho e substituição sob Write Lock
         rwLock.writeLock().lock();
         try {
             if (copia.size() <= this.chain.size()) {
@@ -145,27 +142,11 @@ public class Blockchain implements Serializable {
             this.chain.clear();
             this.chain.addAll(copia);
             this.chainVersion++;
-            snapshotToNotify = new ArrayList<>(this.chain);
+
+            return ReplaceResult.accept();
 
         } finally {
             rwLock.writeLock().unlock();
-        }
-
-        // Notificação fora do Lock
-        if (snapshotToNotify != null) {
-            notifyListenerSafely(snapshotToNotify);
-        }
-
-        return ReplaceResult.accept();
-    }
-
-    private void notifyListenerSafely(List<Block> snapshot) {
-        if (this.listener != null) {
-            try {
-                this.listener.onChainUpdated(snapshot);
-            } catch (Exception e) {
-                System.err.println("Aviso: Falha ao executar listener: " + e.getMessage());
-            }
         }
     }
 
