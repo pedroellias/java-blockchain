@@ -38,6 +38,7 @@ O enum `MessageType` define as seguintes operações do protocolo:
 * **PEERS_LIST:** Resposta contendo lista de peers conhecidos.
 * **GET_BLOCKCHAIN:** Solicitação da cópia completa da blockchain local.
 * **BLOCKCHAIN_COPY:** Envio/Anúncio da cópia serializada da blockchain.
+* **ACK:** Confirmação de recebimento do handshake/sucesso de processamento
 * **REJECT:** Notificação de rejeição de mensagem ou de cadeia inválida.
 
 ## 5. Semântica das Mensagens
@@ -50,6 +51,7 @@ A tabela a seguir especifica o comportamento, o tipo do payload e a finalidade d
 | **PEERS_LIST** | Servidor | `List<String>` | Retorna uma lista de strings formatadas no padrão "IP:Porta" com os endereços de outros nós conhecidos. |
 | **GET_BLOCKCHAIN** | Cliente | `null` | Solicita a cópia integral do `ArrayList<Block>` armazenado no nó servidor. |
 | **BLOCKCHAIN_COPY** | Ambos | `ArrayList<Block>` | Envia a cópia serializada da cadeia. Utilizada como resposta a `GET_BLOCKCHAIN` ou em transmissão proativa (broadcast) após a mineração de um novo bloco. |
+| **ACK** | Servidor | `null` | Confirma que a mensagem recebida foi verificada com sucesso |
 | **REJECT** | Servidor | `String` | Notifica que a cadeia ou mensagem recebida foi rejeitada, contendo o motivo em formato texto (ex.: "Cadeia inválida" ou "Tamanho menor que a cadeia local"). |
 
 ## 6. Fluxos de Operação do Protocolo
