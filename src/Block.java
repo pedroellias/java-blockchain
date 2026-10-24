@@ -3,7 +3,7 @@ import java.util.function.BooleanSupplier;
 
 public class Block implements Serializable {
 
-    private static final long serialVersionUID = -13L;
+    private static final long serialVersionUID = 13L;
 
     private String hash;
     private final int indice;

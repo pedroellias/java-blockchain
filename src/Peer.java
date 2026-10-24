@@ -111,6 +111,6 @@ public class Peer {
         System.out.println(m);
 
         A.recvPeersList(m);
-        System.out.println(A.knownPeers);
+        System.out.println("lista de A: " + A.knownPeers);
     }
 }

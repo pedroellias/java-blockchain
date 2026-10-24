@@ -8,7 +8,7 @@ import java.io.OutputStream;
 import java.io.Serializable;
 
 public class NetworkMessage implements Serializable {
-    private static final long serialVersionUID = 67L;
+    private static final long serialVersionUID = 13L;
     
     private MessageType type;
     @SuppressWarnings("serial")
