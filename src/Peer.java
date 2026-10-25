@@ -1,7 +1,12 @@
 import java.util.List;
+import java.util.Map;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Hashtable;
 
 public final class Peer {
     public static final int MAX_PEERS = 5;
@@ -14,86 +19,106 @@ public final class Peer {
     private String name;
     private String protocolVersion;
     private List<String> knownPeers;
+    private Map<String, PeerConnection> connections;
     private String ip;
     private int port;
     private ServerSocket server;
+    private Server listener;
+
+    private volatile boolean connected;
 
     private Blockchain blockchain;
 
-    public Peer(String name, String protocolVersion) throws IOException {
+    private Peer(String name, String protocolVersion, int port) throws IOException {
         this.name = name;
         this.protocolVersion = protocolVersion;
         this.knownPeers = new ArrayList<>(MAX_PEERS);
+        this.connections = new Hashtable<>();
         
-        this.server = new ServerSocket(0);
-        this.port = server.getLocalPort();
+        this.server = new ServerSocket(port);
         this.ip = server.getInetAddress().getHostAddress();
+        this.port = server.getLocalPort();
 
         this.addKnownPeer(SEED_IP, SEED_PORTA);
         this.addKnownPeer(this.ip, this.port);
 
+        this.listener = new Server(this);
+
+        this.connected = true;
+
         this.blockchain = null;
+    }
+
+    public Peer(String name, String protocolVersion) throws IOException {
+        this(name, protocolVersion, 0);
     }
     
     public Peer() throws IOException {
-        this.name = "NodeSEED";
-        this.protocolVersion = SEED_PROTOCOL_VERSION;
-        this.knownPeers = new ArrayList<>(MAX_PEERS);
-        
-        this.server = new ServerSocket(SEED_PORTA);
-        this.ip = SEED_IP;
-        this.port = SEED_PORTA;
-        
-        this.addKnownPeer(SEED_IP, SEED_PORTA);
-
-        // TODO: o peer seed precisa criar uma block chain especial que já começa com o bloco genesis e previousHash 0
+        this("seed", SEED_PROTOCOL_VERSION, SEED_PORTA);
+        knownPeers.removeLast();
         this.blockchain = new Blockchain(DIFICULDADE);
     }
-
-    // TODO: enviar a mensagem de verdade
-    public NetworkMessage sendHello() {
-        NetworkMessage m = new NetworkMessage(MessageType.HELLO, protocolVersion + "-" + name + "-" + port);
-        System.out.println("[" + name + "] enviou: " + m);
-        return m;
-    }
-
-    // TODO: imagino que ao ler um hello e verificar que o protocolo é igual, o peer destinatário tem que registrar o peer remetente na lista de peers conhecidos, e então enviar uma mensagem ACK. Se houver falha, envia REJECT com mensagem de erro (ex: Versão de protocolo não coincide).
-    // adicionei o numero da porta como parte do payload de enviar mensagem para tentar resolver isso
-    // o IP será obtido através do socket (quando eu implementar a conexão de rede)
-    public NetworkMessage recvHello(NetworkMessage hello) {
-        String payload = (String) hello.getPayload();
-        String[] split = payload.split("-");
-        if (split[0].equals(this.protocolVersion)) {
-            // TODO: adiciona o ip:porta em vez do nome:porta (vai vir do socket)
-            this.addKnownPeer(split[1], Integer.parseInt(split[2]));
-            System.out.println("[" + name + "] recebeu hello e registrou: " + split[1] + ":" + split[2]);
-            return new NetworkMessage(MessageType.ACK, null);
-        } else {
-            return new NetworkMessage(MessageType.REJECT, "Versão de protocolo não coincide com a versão atual (" + protocolVersion + ")");
+    
+    public synchronized void recv(PeerConnection remetente, byte[] bytes) {
+        NetworkMessage msg = NetworkMessage.desserializar(bytes);
+        switch (msg.getType()) {
+            case HELLO: {
+                recvHello(remetente, msg);
+                break;
+            }
+            case GET_PEERS: {
+                recvGetPeers(remetente, msg);
+                break;
+            }
+            case PEERS_LIST: {
+                recvPeersList(remetente, msg);
+                break;
+            }
+            case GET_BLOCKCHAIN: {
+                recvGetBlockchain(remetente, msg);
+                break;
+            }
+            case BLOCKCHAIN_COPY: {
+                recvBlockchainCopy(remetente, msg);
+                break;
+            }
+            case ACK: {
+                recvAck(remetente, msg);
+                break;
+            }
+            case REJECT: {
+                recvReject(remetente, msg);
+                break;
+            }
+            default: {
+                System.err.println("UNREACHABLE");
+                System.exit(-1);
+            }
         }
     }
 
-    public NetworkMessage sendGetPeers() {
-        NetworkMessage m = new NetworkMessage(MessageType.GET_PEERS, null);
-        System.out.println("[" + name + "] enviou: " + m);
-        return m;
-    }
-    
-    // TODO: devo separar isso na função "sendPeersList() ou, por ela só acontecer em resposta à um recvGetPeers(), isso nao é necessário? 
-    // no caso, como o PEERS_LIST é exclusivamente uma resposta de GET_PEERS, separar as funções talvez não seja necessário."
-    public NetworkMessage recvGetPeers(NetworkMessage getPeers) {
-        return sendPeersList();
+    public void recvHello(PeerConnection remetente, NetworkMessage hello) {
+        String payload = (String) hello.getPayload();
+        String[] split = payload.split("-");
+
+        if (split[0].equals(this.protocolVersion)) {
+            String ip = remetente.getSocket().getInetAddress().getHostAddress();
+            int port = remetente.getSocket().getPort();
+            this.addKnownPeer(ip, port);
+            remetente.enviar(new NetworkMessage(MessageType.ACK, null));
+        } else {
+            remetente.enviar(new NetworkMessage(MessageType.REJECT, "Versão de protocolo não coincide com a versão atual (" + protocolVersion + ")"));
+        }
     }
 
-    public NetworkMessage sendPeersList() {
-        NetworkMessage m = new NetworkMessage(MessageType.PEERS_LIST, this.knownPeers);
-        System.out.println("[" + name + "] enviou: " + m);
-        return m;
+    public void recvGetPeers(PeerConnection remetente, NetworkMessage getPeers) {
+        remetente.enviar(new NetworkMessage(MessageType.PEERS_LIST, this.knownPeers));
     }
+
 
     // Não haverá mensagem resposta ACK por parte do recebedor de PEERS_LIST
     // decisão de troca de confiança <-> desempenho
-    public void recvPeersList(NetworkMessage peersList) {
+    public void recvPeersList(PeerConnection remetente, NetworkMessage peersList) {
         @SuppressWarnings("unchecked")
         List<String> payload = (List<String>) peersList.getPayload();
         
@@ -104,51 +129,73 @@ public final class Peer {
             String ip = split[0];
             int port = Integer.parseInt(split[1]);
             
+            // TODO: verificar se isso aqui é necessário (ou se o primeiro if já cobre, oq eu acho que sim)
             if (ip.equals(this.ip) && port == this.port) continue;
             
-            // TODO: abrir conexão com peer novo além de só adicioná-lo na lista.
             this.addKnownPeer(ip, port);
         }
     }
     
-    
-    public NetworkMessage sendGetBlockchain() {
-        NetworkMessage m = new NetworkMessage(MessageType.GET_BLOCKCHAIN, null);
-        System.out.println("[" + name + "] enviou: " + m);
-        return m;
+    public void recvGetBlockchain(PeerConnection remetente, NetworkMessage getBlockchain) {
+        remetente.enviar(new NetworkMessage(MessageType.BLOCKCHAIN_COPY, this.blockchain.getSnapshot()));
     }
     
-    public NetworkMessage recvGetBlockchain(NetworkMessage getBlockchain) {
-        return sendBlockchainCopy();
-    }
-    
-    // Não chamar sem que esse peer tenha uma blockchain (todo peer deve passar pelo fluxo A e B antes de operar normalmente)
-    public NetworkMessage sendBlockchainCopy() {
-        NetworkMessage m = new NetworkMessage(MessageType.BLOCKCHAIN_COPY, this.blockchain.getSnapshot());
-        System.out.println("[" + name + "] enviou: " + m);
-        return m;
-    }
-    
-    public NetworkMessage recvBlockchainCopy(NetworkMessage blockchainCopy) {
+    public void recvBlockchainCopy(PeerConnection remetente, NetworkMessage blockchainCopy) {
         @SuppressWarnings("unchecked")
         List<Block> payload = (List<Block>) blockchainCopy.getPayload();
         
         if (this.blockchain == null) {
             this.blockchain = new Blockchain(DIFICULDADE, payload);
-            return null;
+            return;
         }
-
+        
         ReplaceResult troca = this.blockchain.tryReplaceChain(payload);
-        if (troca.accepted()) {
-            return null;
-        } else {
-            return new NetworkMessage(MessageType.REJECT, troca.reason());
+        if (!troca.accepted()) {
+            remetente.enviar(new NetworkMessage(MessageType.REJECT, troca.reason()));
         }
+    }
+    
+    public void recvAck(PeerConnection remetente, NetworkMessage ack) {
+        return;
+    }
+    
+    public void recvReject(PeerConnection remetente, NetworkMessage reject) {
+        return;
+    }
+
+    public NetworkMessage sendHello() {
+        return new NetworkMessage(MessageType.HELLO, protocolVersion + "-" + name);
     }
 
     public final synchronized void addKnownPeer(String ip, int port) {
-        // TODO: conexão com o socket novo é feita aqui ou separado?
-        this.knownPeers.add(ip + ":" + port);
+        String id = ip + ":" + port;
+        this.knownPeers.add(id);
+    }
+    
+    // TODO: TIRAR O RETORNO DO PEER CONNECTION, É APENAS PARA TESTE
+    public final synchronized void conectar(String ip, int port) {
+        String id = ip + ":" + port;
+        try {
+            Socket newPeer = new Socket(ip, port);
+            PeerConnection con = new PeerConnection(this, newPeer);
+            con.enviar(sendHello());
+            this.connections.put(id, con);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void close() throws IOException {
+        this.log("Encerrando Peer...");
+        this.connected = false;
+        this.server.close();
+        for (PeerConnection s : connections.values()) {
+            s.getSocket().close();
+        }
+    }
+
+    public void log(String s) {
+        System.out.println("[" + this.name + "@" + ip + ":" + port + "] " + s);
     }
     
     public String getName() {
@@ -163,33 +210,37 @@ public final class Peer {
         return this.blockchain;
     }
     
-    public static void main(String[] args) throws IOException {
-        Peer B = new Peer();
-        Peer A = new Peer("A", "V1.0");
+    public String getIp() {
+        return ip;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public ServerSocket getServerSocket() {
+        return server;
+    }
+
+    public boolean isConnected() {
+        return connected;
+    }
+
+    public static void main(String[] args) throws IOException, InterruptedException {
         
-        System.out.println("\n --- FLUXO A ---");
-
-        System.out.println(B.recvHello(A.sendHello()));
-
-        NetworkMessage m = B.recvGetPeers(A.sendGetPeers());
-        System.out.println(m);
-
-        A.recvPeersList(m);
-        System.out.println("lista de A: " + A.knownPeers);
-
-        System.out.println("\n --- FLUXO B ---");
-
-        B.blockchain.addBlock("Dados do Bloco #2", () -> false);
-
-        NetworkMessage a = A.recvBlockchainCopy(B.recvGetBlockchain(A.sendGetBlockchain()));
-        System.out.println(a);
-        if (a == null) {
-            System.out.println("Bloco A recebeu a blockchain de B e a validou com sucesso");
-        } else if (a.getType() == MessageType.REJECT) {
-            System.out.println("Bloco A recebeu a blockchain de B e a rejeitou pois: " + a.getPayload());
+        if (args.length == 0) {
+            Peer A = new Peer("A", "V1.0");
+            A.conectar(SEED_IP, SEED_PORTA);
+            Thread.sleep(6000);
+            A.close();
+            Thread.sleep(6000);
+            System.out.println("knowPeers de A: " + A.knownPeers);
         } else {
-            System.out.println("!!!! essa linha não deveria ser imprimida");
+            Peer seed = new Peer();
+            Thread.sleep(6000);
+            seed.close();
+            Thread.sleep(6000);
+            System.out.println("knowPeers de seed: " + seed.knownPeers);
         }
-        System.out.println("Blockchain de A: " + A.getBlockchain());
     }
 }
