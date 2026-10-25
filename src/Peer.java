@@ -1,11 +1,12 @@
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.io.IOException;
-import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.Base64;
+import java.util.HashSet;
 import java.util.Hashtable;
 
 public final class Peer {
@@ -13,12 +14,15 @@ public final class Peer {
     public static final String SEED_IP = "127.0.0.1";
     public static final int SEED_PORTA = 6767;
     public static final String SEED_PROTOCOL_VERSION = "V1.0";
+    // MUDAR ESSA VARIÁVEL PARA CADA COMPUTADOR NA APRESENTAÇÃO
+    public static final String IP_PADRÃO = "127.0.0.1";
 
     public static final int DIFICULDADE = 2;
 
     private String name;
     private String protocolVersion;
-    private List<String> knownPeers;
+    private Set<String> knownPeers;
+    // private List<String> knownPeers;
     private Map<String, PeerConnection> connections;
     private String ip;
     private int port;
@@ -29,13 +33,14 @@ public final class Peer {
 
     private Blockchain blockchain;
 
-    private Peer(String name, String protocolVersion, int port) throws IOException {
+    private Peer(String name, String protocolVersion, String ip, int port) throws IOException {
         this.name = name;
         this.protocolVersion = protocolVersion;
-        this.knownPeers = new ArrayList<>(MAX_PEERS);
+        this.knownPeers = new HashSet<>();
+        // this.knownPeers = new ArrayList<>(MAX_PEERS);
         this.connections = new Hashtable<>();
         
-        this.server = new ServerSocket(port);
+        this.server = new ServerSocket(port, 10, InetAddress.getByName(ip));
         this.ip = server.getInetAddress().getHostAddress();
         this.port = server.getLocalPort();
 
@@ -50,12 +55,14 @@ public final class Peer {
     }
 
     public Peer(String name, String protocolVersion) throws IOException {
-        this(name, protocolVersion, 0);
+        this(name, protocolVersion, IP_PADRÃO,0);
     }
     
     public Peer() throws IOException {
-        this("seed", SEED_PROTOCOL_VERSION, SEED_PORTA);
-        knownPeers.removeLast();
+        this("seed", SEED_PROTOCOL_VERSION, SEED_IP, SEED_PORTA);
+        // TODO: pode não precisar dessa linha se a ideia de usar sets em vez de list funcionar
+        // knownPeers.removeLast();
+        this.log("Known peers: " + knownPeers);
         this.blockchain = new Blockchain(DIFICULDADE);
     }
     
@@ -103,8 +110,9 @@ public final class Peer {
 
         if (split[0].equals(this.protocolVersion)) {
             String ip = remetente.getSocket().getInetAddress().getHostAddress();
-            int port = remetente.getSocket().getPort();
+            int port = Integer.parseInt(split[2]);
             this.addKnownPeer(ip, port);
+            this.addConnection(ip, port, remetente);
             remetente.enviar(new NetworkMessage(MessageType.ACK, null));
         } else {
             remetente.enviar(new NetworkMessage(MessageType.REJECT, "Versão de protocolo não coincide com a versão atual (" + protocolVersion + ")"));
@@ -120,7 +128,8 @@ public final class Peer {
     // decisão de troca de confiança <-> desempenho
     public void recvPeersList(PeerConnection remetente, NetworkMessage peersList) {
         @SuppressWarnings("unchecked")
-        List<String> payload = (List<String>) peersList.getPayload();
+        // TODO: testando Set em vez de list para knownPeers, trocar tipo dessa linha se não funcionar
+        Set<String> payload = (Set<String>) peersList.getPayload();
         
         for (String peer : payload) {
             if (this.knownPeers.contains(peer)) continue;
@@ -129,10 +138,8 @@ public final class Peer {
             String ip = split[0];
             int port = Integer.parseInt(split[1]);
             
-            // TODO: verificar se isso aqui é necessário (ou se o primeiro if já cobre, oq eu acho que sim)
-            if (ip.equals(this.ip) && port == this.port) continue;
-            
             this.addKnownPeer(ip, port);
+            this.conectar(ip, port);
         }
     }
     
@@ -163,23 +170,33 @@ public final class Peer {
         return;
     }
 
-    public NetworkMessage sendHello() {
-        return new NetworkMessage(MessageType.HELLO, protocolVersion + "-" + name);
+    public NetworkMessage msgHello() {
+        return new NetworkMessage(MessageType.HELLO, protocolVersion + "-" + name + "-" + port);
+    }
+    
+    public NetworkMessage msgGetPeers() {
+        return new NetworkMessage(MessageType.GET_PEERS, null);
     }
 
     public final synchronized void addKnownPeer(String ip, int port) {
         String id = ip + ":" + port;
         this.knownPeers.add(id);
     }
+
+    public final synchronized void addConnection(String ip, int port, PeerConnection con) {
+        String id = ip + ":" + port;
+        this.connections.put(id, con);
+    }
     
-    // TODO: TIRAR O RETORNO DO PEER CONNECTION, É APENAS PARA TESTE
     public final synchronized void conectar(String ip, int port) {
         String id = ip + ":" + port;
         try {
             Socket newPeer = new Socket(ip, port);
             PeerConnection con = new PeerConnection(this, newPeer);
-            con.enviar(sendHello());
+            con.enviar(msgHello());
             this.connections.put(id, con);
+
+            con.enviar(msgGetPeers()); 
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -205,7 +222,7 @@ public final class Peer {
     public String getProtocolVersion() {
         return protocolVersion;
     }
-
+ 
     public Blockchain getBlockchain() {
         return this.blockchain;
     }
@@ -227,20 +244,17 @@ public final class Peer {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        
+        Peer A;
         if (args.length == 0) {
-            Peer A = new Peer("A", "V1.0");
-            A.conectar(SEED_IP, SEED_PORTA);
-            Thread.sleep(6000);
-            A.close();
-            Thread.sleep(6000);
-            System.out.println("knowPeers de A: " + A.knownPeers);
+            A = new Peer();
         } else {
-            Peer seed = new Peer();
-            Thread.sleep(6000);
-            seed.close();
-            Thread.sleep(6000);
-            System.out.println("knowPeers de seed: " + seed.knownPeers);
+            A = new Peer(args[0], "V1.0");
+            A.conectar(SEED_IP, SEED_PORTA);
         }
+        Thread.sleep(100000);
+        A.close();
+        Thread.sleep(2000);
+        System.out.println("knowPeers de A: " + A.knownPeers);
+        System.out.println("connections de A: " + A.connections);
     }
 }

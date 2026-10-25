@@ -2,23 +2,26 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-public class Server implements Runnable {
-    Peer parent;
+public final class Server implements Runnable {
+    private Peer parent;
+    private ServerSocket server;
 
     public Server(Peer parent) {
         this.parent = parent;
+        this.server = parent.getServerSocket();
         
         new Thread(this, "SERVER_THREAD").start();
     }
     
     @Override
     public void run() {
-        parent.log("Ouvindo novas conexões...");
-        ServerSocket server = parent.getServerSocket();
+        parent.log("Ouvindo novas conexões na porta: " + parent.getPort());
+        
         try {
             while (parent.isConnected()) {
-                Socket cliente = server.accept();
-                new PeerConnection(parent, cliente);
+                Socket newPeer = server.accept();
+                new PeerConnection(parent, newPeer);
+                // parent.addKnownPeer(newPeer.getInetAddress().getHostAddress(), newPeer.getPort());
             }
         } catch (IOException e) {
             if (parent.isConnected()) e.printStackTrace();

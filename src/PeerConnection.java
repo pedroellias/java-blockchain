@@ -8,6 +8,7 @@ import java.util.Base64;
 class PeerConnection implements Runnable {
     private Peer parent;
     private Socket socket;
+    private String socketId;
     private BufferedReader in;
     private PrintWriter out;
 
@@ -16,6 +17,7 @@ class PeerConnection implements Runnable {
         this.socket = socket;
         this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.out = new PrintWriter(socket.getOutputStream(), true);
+        this.socketId = socket.getInetAddress().getHostAddress() + ":" + socket.getPort();
 
         new Thread(this, "PeerConnection").start();
     }
@@ -27,20 +29,21 @@ class PeerConnection implements Runnable {
     
     @Override
     public void run() {
-        parent.log("Nova conexão com: " + socket.getInetAddress().getHostAddress() + ":" + socket.getLocalPort());
+        parent.log("Nova conexão com: " + socketId);
         try {
             
             while (parent.isConnected()) {
                 String s = in.readLine();
-                if (in != null) {
+                if (s != null) {
                     byte[] dados = Base64.getDecoder().decode(s);
-                    parent.log("Recebido: " + NetworkMessage.desserializar(dados));
+                    parent.log("Recebido: " + NetworkMessage.desserializar(dados) + " de " + socketId);
                     parent.recv(this, dados);
                 }
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            if (parent.isConnected()) e.printStackTrace();
         }
+        parent.log("Encerrando conexão com: " + socket.getInetAddress().getHostAddress() + ":" + socket.getLocalPort());
     }
 
     public Socket getSocket() {
