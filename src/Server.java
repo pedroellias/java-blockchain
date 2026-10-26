@@ -21,7 +21,6 @@ public final class Server implements Runnable {
             while (parent.isConnected()) {
                 Socket newPeer = server.accept();
                 new PeerConnection(parent, newPeer);
-                // parent.addKnownPeer(newPeer.getInetAddress().getHostAddress(), newPeer.getPort());
             }
         } catch (IOException e) {
             if (parent.isConnected()) e.printStackTrace();

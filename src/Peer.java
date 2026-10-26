@@ -1,5 +1,6 @@
 import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.Set;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -23,7 +24,7 @@ public final class Peer {
     private String protocolVersion;
     private Set<String> knownPeers;
     // private List<String> knownPeers;
-    private Map<String, PeerConnection> connections;
+    private Map<PeerConnection, String> connections;
     private String ip;
     private int port;
     private ServerSocket server;
@@ -47,11 +48,10 @@ public final class Peer {
         this.addKnownPeer(SEED_IP, SEED_PORTA);
         this.addKnownPeer(this.ip, this.port);
 
-        this.listener = new Server(this);
-
         this.connected = true;
-
         this.blockchain = null;
+
+        this.listener = new Server(this);
     }
 
     public Peer(String name, String protocolVersion) throws IOException {
@@ -62,12 +62,14 @@ public final class Peer {
         this("seed", SEED_PROTOCOL_VERSION, SEED_IP, SEED_PORTA);
         // TODO: pode não precisar dessa linha se a ideia de usar sets em vez de list funcionar
         // knownPeers.removeLast();
-        this.log("Known peers: " + knownPeers);
         this.blockchain = new Blockchain(DIFICULDADE);
     }
     
-    public synchronized void recv(PeerConnection remetente, byte[] bytes) {
-        NetworkMessage msg = NetworkMessage.desserializar(bytes);
+    public synchronized void recv(PeerConnection remetente, NetworkMessage msg) {
+        if (msg == null) {
+            log("Mensagem inválida recebida. Ignorando.");
+            return;
+        }
         switch (msg.getType()) {
             case HELLO: {
                 recvHello(remetente, msg);
@@ -97,10 +99,6 @@ public final class Peer {
                 recvReject(remetente, msg);
                 break;
             }
-            default: {
-                System.err.println("UNREACHABLE");
-                System.exit(-1);
-            }
         }
     }
 
@@ -120,7 +118,7 @@ public final class Peer {
     }
 
     public void recvGetPeers(PeerConnection remetente, NetworkMessage getPeers) {
-        remetente.enviar(new NetworkMessage(MessageType.PEERS_LIST, this.knownPeers));
+        remetente.enviar(new NetworkMessage(MessageType.PEERS_LIST, new ArrayList<>(this.knownPeers)));
     }
 
 
@@ -128,8 +126,7 @@ public final class Peer {
     // decisão de troca de confiança <-> desempenho
     public void recvPeersList(PeerConnection remetente, NetworkMessage peersList) {
         @SuppressWarnings("unchecked")
-        // TODO: testando Set em vez de list para knownPeers, trocar tipo dessa linha se não funcionar
-        Set<String> payload = (Set<String>) peersList.getPayload();
+        List<String> payload = (List<String>) peersList.getPayload();
         
         for (String peer : payload) {
             if (this.knownPeers.contains(peer)) continue;
@@ -185,40 +182,75 @@ public final class Peer {
 
     public final synchronized void addConnection(String ip, int port, PeerConnection con) {
         String id = ip + ":" + port;
-        this.connections.put(id, con);
+        this.connections.put(con, id);
+    }
+    
+    public synchronized void removeKnownPeer(String ip, int port) {
+        String id = ipPortToId(ip, port);
+        this.knownPeers.remove(id);
+    }
+
+    public final synchronized void removeConnection(PeerConnection con) {
+        this.connections.remove(con);
     }
     
     public final synchronized void conectar(String ip, int port) {
-        String id = ip + ":" + port;
         try {
             Socket newPeer = new Socket(ip, port);
             PeerConnection con = new PeerConnection(this, newPeer);
             con.enviar(msgHello());
-            this.connections.put(id, con);
+            this.addConnection(ip, port, con);
 
+            // TODO: enviar GET_PEERS só quando receber o ACK após o hello
             con.enviar(msgGetPeers()); 
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
+    
+    public synchronized void desconectar(PeerConnection con) {
+        String id = this.connections.get(con);
+        // a connection já foi removida do mapa, ignorar
+        if (id == null) return;
 
-    public void close() throws IOException {
+        try {
+            con.getSocket().close();
+            removeKnownPeer(idToIp(id), idToPort(id));
+            removeConnection(con);
+        } catch (IOException e) {
+            log("Falha ao desconectar com " + id);
+        }
+    }
+    
+    public synchronized void close() throws IOException {
         this.log("Encerrando Peer...");
         this.connected = false;
         this.server.close();
-        for (PeerConnection s : connections.values()) {
-            s.getSocket().close();
+        for (PeerConnection con : new Hashtable<PeerConnection, String>(connections).keySet()) {
+            desconectar(con);
         }
     }
 
     public void log(String s) {
         System.out.println("[" + this.name + "@" + ip + ":" + port + "] " + s);
     }
+
+    public static String ipPortToId(String ip, int port) {
+        return ip + ":" + port;
+    }
+
+    public static String idToIp(String id) {
+        return id.split(":")[0];
+    }
+
+    public static int idToPort(String id) {
+        return Integer.parseInt(id.split(":")[1]);
+    }
     
     public String getName() {
         return name;
     }
-
+    
     public String getProtocolVersion() {
         return protocolVersion;
     }
@@ -230,7 +262,7 @@ public final class Peer {
     public String getIp() {
         return ip;
     }
-
+    
     public int getPort() {
         return port;
     }
@@ -244,6 +276,7 @@ public final class Peer {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
+        
         Peer A;
         if (args.length == 0) {
             A = new Peer();
@@ -251,10 +284,23 @@ public final class Peer {
             A = new Peer(args[0], "V1.0");
             A.conectar(SEED_IP, SEED_PORTA);
         }
-        Thread.sleep(100000);
+        try (Scanner s = new Scanner(System.in)) {
+            while (s.hasNextLine()) {
+                String a = s.nextLine();
+                if (a.equals("p")) {
+                    System.out.println("knowPeers de A: " + A.knownPeers);
+                    System.out.println("connections de A: " + A.connections);
+                } else 
+                    break;
+            }
+        }
         A.close();
         Thread.sleep(2000);
         System.out.println("knowPeers de A: " + A.knownPeers);
         System.out.println("connections de A: " + A.connections);
+    }
+
+    void printcon() {
+        
     }
 }

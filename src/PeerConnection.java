@@ -8,22 +8,24 @@ import java.util.Base64;
 class PeerConnection implements Runnable {
     private Peer parent;
     private Socket socket;
-    private String socketId;
+    private final String socketId; // usado pelo hashCode(), deve ser imutável
     private BufferedReader in;
     private PrintWriter out;
 
+    
     public PeerConnection(Peer parent, Socket socket) throws IOException {
         this.parent = parent;
         this.socket = socket;
         this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.out = new PrintWriter(socket.getOutputStream(), true);
         this.socketId = socket.getInetAddress().getHostAddress() + ":" + socket.getPort();
-
+        
         new Thread(this, "PeerConnection").start();
     }
-
+    
     public void enviar(NetworkMessage msg) {
         String msgCodificada = Base64.getEncoder().encodeToString(msg.serializar());
+        parent.log("Enviando para " + socketId + ": " + msg);
         out.println(msgCodificada);
     }
     
@@ -31,22 +33,50 @@ class PeerConnection implements Runnable {
     public void run() {
         parent.log("Nova conexão com: " + socketId);
         try {
-            
             while (parent.isConnected()) {
                 String s = in.readLine();
-                if (s != null) {
-                    byte[] dados = Base64.getDecoder().decode(s);
-                    parent.log("Recebido: " + NetworkMessage.desserializar(dados) + " de " + socketId);
-                    parent.recv(this, dados);
-                }
+                if (s == null) break;
+                
+                byte[] dados = Base64.getDecoder().decode(s);
+                NetworkMessage msg = NetworkMessage.desserializar(dados);
+                parent.log("Recebido de " + socketId + ": " + msg);
+                parent.recv(this, msg);
             }
         } catch (IOException e) {
             if (parent.isConnected()) e.printStackTrace();
         }
-        parent.log("Encerrando conexão com: " + socket.getInetAddress().getHostAddress() + ":" + socket.getLocalPort());
+        if (parent.isConnected()) {
+            parent.desconectar(this);
+        }
+        parent.log("Encerrando conexão com: " + socketId);
     }
 
     public Socket getSocket() {
         return socket;
+    }
+
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + ((socketId == null) ? 0 : socketId.hashCode());
+        return result;
+    }
+    
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj)
+            return true;
+        if (obj == null)
+            return false;
+        if (getClass() != obj.getClass())
+            return false;
+        PeerConnection other = (PeerConnection) obj;
+        if (socketId == null) {
+            if (other.socketId != null)
+                return false;
+        } else if (!socketId.equals(other.socketId))
+            return false;
+        return true;
     }
 }
