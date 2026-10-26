@@ -276,7 +276,11 @@ public final class Peer {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        
+        System.out.println("=====================================================");
+        System.out.println("DIGITE O NÚMERO PARA VER A INFORMAÇÃO CORRESPONDENTE:");
+        System.out.println("[1] - VER CONEXÕES  [0] - DESCONECTAR ");
+        System.out.println("=====================================================\n");
+
         Peer A;
         if (args.length == 0) {
             A = new Peer();
@@ -286,21 +290,17 @@ public final class Peer {
         }
         try (Scanner s = new Scanner(System.in)) {
             while (s.hasNextLine()) {
-                String a = s.nextLine();
-                if (a.equals("p")) {
-                    System.out.println("knowPeers de A: " + A.knownPeers);
-                    System.out.println("connections de A: " + A.connections);
-                } else 
+                String linha = s.nextLine();
+                if (linha.equals("1")) {
+                    System.out.println("LISTA DE PEERS: " + A.knownPeers);
+                    System.out.println("      CONEXÕES: " + A.connections);
+                    System.out.println("");
+                } else if (linha.equals("0")) {
                     break;
+                }
             }
         }
         A.close();
         Thread.sleep(2000);
-        System.out.println("knowPeers de A: " + A.knownPeers);
-        System.out.println("connections de A: " + A.connections);
-    }
-
-    void printcon() {
-        
     }
 }
