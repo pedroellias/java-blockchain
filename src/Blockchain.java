@@ -16,17 +16,26 @@ public final class Blockchain implements Serializable {
     private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
     private volatile int chainVersion = 0;
 
+    /**
+     * Construtor padrão do nó.
+     * Inicializa a cadeia sempre com o Bloco Genesis padrão da rede.
+     */
     public Blockchain(int difficulty) {
         this.difficulty = difficulty;
         this.chain = new ArrayList<>();
         this.chain.add(GENESIS_BLOCK);
     }
 
-    public Blockchain(int difficulty, List<Block> chain) {
+    /**
+     * CONSTRUTOR ALTERADO PARA PRIVADO:
+     * Evita que qualquer classe externa (como Peer) instancie uma Blockchain
+     * diretamente com uma lista de blocos recebida da rede sem antes validá-la.
+     */
+    private Blockchain(int difficulty, List<Block> chain) {
         this.difficulty = difficulty;
         this.chain = new ArrayList<>(chain);
     }
-    
+
     public int getDifficulty() {
         return difficulty;
     }
@@ -119,7 +128,7 @@ public final class Blockchain implements Serializable {
         }
         List<Block> copia = new ArrayList<>(recebida);
 
-        // Validação pura e estática (fora do lock)
+        // Validação geral
         String validationError = validate(copia, this.difficulty);
         if (validationError != null) {
             return ReplaceResult.reject("Cadeia inválida: " + validationError);
@@ -207,7 +216,6 @@ public final class Blockchain implements Serializable {
         }
     }
 
-    
     @Override
     public String toString() {
         return "Blockchain [chain=" + chain + ", \ndifficulty=" + difficulty + ", chainVersion=" + chainVersion + "]";
