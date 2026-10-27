@@ -11,7 +11,6 @@ import java.util.HashSet;
 import java.util.Hashtable;
 
 public final class Peer {
-    public static final int MAX_PEERS = 5;
     public static final String SEED_IP = "127.0.0.1";
     public static final int SEED_PORTA = 6767;
     public static final String SEED_PROTOCOL_VERSION = "V1.0";
@@ -23,7 +22,6 @@ public final class Peer {
     private String name;
     private String protocolVersion;
     private Set<String> knownPeers;
-    // private List<String> knownPeers;
     private Map<PeerConnection, String> connections;
     private String ip;
     private int port;
@@ -38,7 +36,6 @@ public final class Peer {
         this.name = name;
         this.protocolVersion = protocolVersion;
         this.knownPeers = new HashSet<>();
-        // this.knownPeers = new ArrayList<>(MAX_PEERS);
         this.connections = new Hashtable<>();
         
         this.server = new ServerSocket(port, 10, InetAddress.getByName(ip));
@@ -60,8 +57,6 @@ public final class Peer {
     
     public Peer() throws IOException {
         this("seed", SEED_PROTOCOL_VERSION, SEED_IP, SEED_PORTA);
-        // TODO: pode não precisar dessa linha se a ideia de usar sets em vez de list funcionar
-        // knownPeers.removeLast();
         this.blockchain = new Blockchain(DIFICULDADE);
     }
     
