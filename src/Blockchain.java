@@ -20,11 +20,6 @@ public final class Blockchain implements Serializable {
         this.chain.add(GENESIS_BLOCK);
     }
 
-    private Blockchain(int difficulty, List<Block> chain) {
-        this.difficulty = difficulty;
-        this.chain = new ArrayList<>(chain);
-    }
-
     public int getDifficulty() {
         return difficulty;
     }
