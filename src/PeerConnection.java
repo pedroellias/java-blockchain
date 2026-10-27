@@ -11,7 +11,7 @@ class PeerConnection implements Runnable {
     private final String socketId; // usado pelo hashCode(), deve ser imutável
     private BufferedReader in;
     private PrintWriter out;
-
+    private boolean acknowledged;
     
     public PeerConnection(Peer parent, Socket socket) throws IOException {
         this.parent = parent;
@@ -19,6 +19,7 @@ class PeerConnection implements Runnable {
         this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.out = new PrintWriter(socket.getOutputStream(), true);
         this.socketId = socket.getInetAddress().getHostAddress() + ":" + socket.getPort();
+        this.acknowledged = false;
         
         new Thread(this, "PeerConnection").start();
     }
@@ -43,7 +44,7 @@ class PeerConnection implements Runnable {
                 parent.recv(this, msg);
             }
         } catch (IOException e) {
-            if (parent.isConnected()) e.printStackTrace();
+            if (parent.isConnected() && this.isAcknowledged()) e.printStackTrace();
         }
         if (parent.isConnected()) {
             parent.desconectar(this);
@@ -53,6 +54,14 @@ class PeerConnection implements Runnable {
 
     public Socket getSocket() {
         return socket;
+    }
+
+    public synchronized void setAcknowledged() {
+        this.acknowledged = true;
+    }
+
+    public boolean isAcknowledged() {
+        return acknowledged;
     }
 
     @Override

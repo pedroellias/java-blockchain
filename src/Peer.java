@@ -65,16 +65,34 @@ public final class Peer {
         this.blockchain = new Blockchain(DIFICULDADE);
     }
     
+    @SuppressWarnings("incomplete-switch")
     public synchronized void recv(PeerConnection remetente, NetworkMessage msg) {
         if (msg == null) {
             log("Mensagem inválida recebida. Ignorando.");
             return;
         }
+
         switch (msg.getType()) {
             case HELLO: {
                 recvHello(remetente, msg);
-                break;
+                return;
             }
+            case ACK: {
+                recvAck(remetente, msg);
+                return;
+            }
+            case REJECT: {
+                recvReject(remetente, msg);
+                return;
+            }
+        }
+
+        if (!remetente.isAcknowledged()) {
+            remetente.enviar(new NetworkMessage(MessageType.REJECT, "Peer não reconhecido."));
+            return;
+        }
+
+        switch (msg.getType()) {
             case GET_PEERS: {
                 recvGetPeers(remetente, msg);
                 break;
@@ -91,14 +109,6 @@ public final class Peer {
                 recvBlockchainCopy(remetente, msg);
                 break;
             }
-            case ACK: {
-                recvAck(remetente, msg);
-                break;
-            }
-            case REJECT: {
-                recvReject(remetente, msg);
-                break;
-            }
         }
     }
 
@@ -106,15 +116,21 @@ public final class Peer {
         String payload = (String) hello.getPayload();
         String[] split = payload.split("-");
 
-        if (split[0].equals(this.protocolVersion)) {
-            String ip = remetente.getSocket().getInetAddress().getHostAddress();
-            int port = Integer.parseInt(split[2]);
-            this.addKnownPeer(ip, port);
-            this.addConnection(ip, port, remetente);
-            remetente.enviar(new NetworkMessage(MessageType.ACK, null));
-        } else {
-            remetente.enviar(new NetworkMessage(MessageType.REJECT, "Versão de protocolo não coincide com a versão atual (" + protocolVersion + ")"));
+        if (split.length != 3) {
+            remetente.enviar(new NetworkMessage(MessageType.REJECT, "Nome inválido (não pode conter \"-\")"));
+            return;
         }
+        if (!split[0].equals(this.protocolVersion)) {
+            remetente.enviar(new NetworkMessage(MessageType.REJECT, "Versão de protocolo não coincide com a versão atual (" + protocolVersion + ")"));
+            return;
+        }
+
+        String ip = remetente.getSocket().getInetAddress().getHostAddress();
+        int port = Integer.parseInt(split[2]);
+        this.addKnownPeer(ip, port);
+        this.addConnection(ip, port, remetente);
+        remetente.setAcknowledged();
+        remetente.enviar(new NetworkMessage(MessageType.ACK, null));
     }
 
     public void recvGetPeers(PeerConnection remetente, NetworkMessage getPeers) {
@@ -160,10 +176,15 @@ public final class Peer {
     }
     
     public void recvAck(PeerConnection remetente, NetworkMessage ack) {
+        remetente.setAcknowledged();
+        remetente.enviar(msgGetPeers()); 
         return;
     }
     
     public void recvReject(PeerConnection remetente, NetworkMessage reject) {
+        // TODO: será que to REJECT deve fechar a conexão? em resposta à uma recusa de HELLO sim, mas o REJECT também pode acontecer em uma falha de validação de blockchain, e não sei se é a melhor estratégia.
+        // PROBLEMA, não tem muito como verificar qual a razão da recusa aqui sem ter estabelecido um protocolo de motivos de REJECT, atualmente é só uma string arbitrária. seria uma extensão às instruções do trabalho
+        desconectar(remetente);
         return;
     }
 
@@ -200,9 +221,6 @@ public final class Peer {
             PeerConnection con = new PeerConnection(this, newPeer);
             con.enviar(msgHello());
             this.addConnection(ip, port, con);
-
-            // TODO: enviar GET_PEERS só quando receber o ACK após o hello
-            con.enviar(msgGetPeers()); 
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -210,6 +228,7 @@ public final class Peer {
     
     public synchronized void desconectar(PeerConnection con) {
         String id = this.connections.get(con);
+
         // a connection já foi removida do mapa, ignorar
         if (id == null) return;
 
