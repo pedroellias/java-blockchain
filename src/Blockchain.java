@@ -1,7 +1,6 @@
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
 
 public final class Blockchain implements Serializable {
@@ -13,24 +12,14 @@ public final class Blockchain implements Serializable {
     @SuppressWarnings("serial")
     private final List<Block> chain;
     private final int difficulty;
-    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
     private volatile int chainVersion = 0;
 
-    /**
-     * Construtor padrão do nó.
-     * Inicializa a cadeia sempre com o Bloco Genesis padrão da rede.
-     */
     public Blockchain(int difficulty) {
         this.difficulty = difficulty;
         this.chain = new ArrayList<>();
         this.chain.add(GENESIS_BLOCK);
     }
 
-    /**
-     * CONSTRUTOR ALTERADO PARA PRIVADO:
-     * Evita que qualquer classe externa (como Peer) instancie uma Blockchain
-     * diretamente com uma lista de blocos recebida da rede sem antes validá-la.
-     */
     private Blockchain(int difficulty, List<Block> chain) {
         this.difficulty = difficulty;
         this.chain = new ArrayList<>(chain);
@@ -44,22 +33,12 @@ public final class Blockchain implements Serializable {
         return chainVersion;
     }
 
-    public List<Block> getSnapshot() {
-        rwLock.readLock().lock();
-        try {
-            return new ArrayList<>(this.chain);
-        } finally {
-            rwLock.readLock().unlock();
-        }
+    public synchronized List<Block> getSnapshot() {
+        return new ArrayList<>(this.chain);
     }
 
-    public Block getLatestBlock() {
-        rwLock.readLock().lock();
-        try {
-            return this.chain.get(this.chain.size() - 1);
-        } finally {
-            rwLock.readLock().unlock();
-        }
+    public synchronized Block getLatestBlock() {
+        return this.chain.get(this.chain.size() - 1);
     }
 
     public boolean isChainValid() {
@@ -67,33 +46,30 @@ public final class Blockchain implements Serializable {
     }
 
     /**
-     * Mineração em Três Fases:
-     * 1. Leitura do estado inicial sob Read Lock.
-     * 2. Mineração fora do Lock (evita travar threads/rede).
-     * 3. Confirmação e adição sob Write Lock caso a versão não tenha mudado.
+     * Mineração
+     * Leitura do estado inicial sob sincronização.
+     * Mineração pura executada FORA de blocos synchronized.
+     * Confirmação e escrita sob sincronização se a versão não mudou.
      */
     public MineResult addBlock(String data, BooleanSupplier cancelled) {
         Block previousBlock;
         int versionAtStart;
 
-        // Leitura sob Lock
-        rwLock.readLock().lock();
-        try {
+        //estado
+        synchronized (this) {
             previousBlock = getLatestBlock();
             versionAtStart = this.chainVersion;
-        } finally {
-            rwLock.readLock().unlock();
         }
 
         int newIndex = previousBlock.getIndice() + 1;
         long timeStamp = System.currentTimeMillis();
         Block newBlock = new Block(newIndex, previousBlock.getHash(), data, timeStamp);
 
-        // Pedido externo OU mudança na versão da cadeia
+        // Cancelamento condicional baseado na versão da cadeia
         BooleanSupplier combinedCancelled = () ->
                 (cancelled != null && cancelled.getAsBoolean()) || (this.chainVersion != versionAtStart);
 
-        // Mineração Fora do Lock
+        // Mineração
         boolean mined = newBlock.mine(this.difficulty, combinedCancelled);
 
         if (!mined) {
@@ -102,9 +78,7 @@ public final class Blockchain implements Serializable {
                     : MineResult.CANCELLED;
         }
 
-        // Gravação sob Write Lock
-        rwLock.writeLock().lock();
-        try {
+        synchronized (this) {
             if (this.chainVersion == versionAtStart) {
                 this.chain.add(newBlock);
                 this.chainVersion++;
@@ -112,45 +86,37 @@ public final class Blockchain implements Serializable {
             } else {
                 return MineResult.DISCARDED_CHAIN_UPDATED;
             }
-        } finally {
-            rwLock.writeLock().unlock();
         }
     }
 
-    /**
-     * Substituição de cadeia totalmente encapsulada.
-     * Valida a lista recebida e, se for válida e estritamente maior, atualiza o estado sob Write Lock.
-     */
     public ReplaceResult tryReplaceChain(List<Block> recebida) {
-        // Cópia defensiva imediata
         if (recebida == null || recebida.isEmpty()) {
-            return ReplaceResult.reject("Cadeia nula ou vazia");
+            return ReplaceResult.reject("CHAIN_ERROR: Cadeia nula ou vazia");
         }
         List<Block> copia = new ArrayList<>(recebida);
 
-        // Validação geral
+        // Validação estática
         String validationError = validate(copia, this.difficulty);
         if (validationError != null) {
-            return ReplaceResult.reject("Cadeia inválida: " + validationError);
+            return ReplaceResult.reject("CHAIN_ERROR: Cadeia inválida (" + validationError + ")");
         }
 
-        // Comparação de tamanho e substituição sob Write Lock
-        rwLock.writeLock().lock();
-        try {
-            if (copia.size() <= this.chain.size()) {
+        synchronized (this) {
+            boolean localEhApenasGenesis = (this.chain.size() == 1);
+
+            // Permite a substituição inicial se a cadeia local tiver apenas o Gênesis exigindo tamanho maior para cadeias já em andamento.
+            if (!localEhApenasGenesis && copia.size() <= this.chain.size()) {
                 return ReplaceResult.reject(String.format(
-                        "Tamanho menor ou igual à cadeia local (recebida: %d, local: %d)",
+                        "CHAIN_ERROR: Tamanho menor ou igual à cadeia local (recebida: %d, local: %d)",
                         copia.size(), this.chain.size()
                 ));
             }
+
             this.chain.clear();
             this.chain.addAll(copia);
             this.chainVersion++;
 
             return ReplaceResult.accept();
-
-        } finally {
-            rwLock.writeLock().unlock();
         }
     }
 
@@ -217,7 +183,7 @@ public final class Blockchain implements Serializable {
     }
 
     @Override
-    public String toString() {
+    public synchronized String toString() {
         return "Blockchain [chain=" + chain + ", \ndifficulty=" + difficulty + ", chainVersion=" + chainVersion + "]";
     }
 
