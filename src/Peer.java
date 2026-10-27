@@ -46,7 +46,7 @@ public final class Peer {
         this.addKnownPeer(this.ip, this.port);
 
         this.connected = true;
-        this.blockchain = null;
+        this.blockchain = new Blockchain(DIFICULDADE);
 
         this.listener = new Server(this);
     }
@@ -57,7 +57,6 @@ public final class Peer {
     
     public Peer() throws IOException {
         this("seed", SEED_PROTOCOL_VERSION, SEED_IP, SEED_PORTA);
-        this.blockchain = new Blockchain(DIFICULDADE);
     }
     
     @SuppressWarnings("incomplete-switch")
@@ -83,7 +82,7 @@ public final class Peer {
         }
 
         if (!remetente.isAcknowledged()) {
-            remetente.enviar(new NetworkMessage(MessageType.REJECT, "Peer não reconhecido."));
+            remetente.enviar(new NetworkMessage(MessageType.REJECT, "CONNECTION_ERROR: Peer não reconhecido."));
             return;
         }
 
@@ -112,11 +111,11 @@ public final class Peer {
         String[] split = payload.split("-");
 
         if (split.length != 3) {
-            remetente.enviar(new NetworkMessage(MessageType.REJECT, "Nome inválido (não pode conter \"-\")"));
+            remetente.enviar(new NetworkMessage(MessageType.REJECT, "CONNECTION_ERROR: Nome inválido (não pode conter \"-\")"));
             return;
         }
         if (!split[0].equals(this.protocolVersion)) {
-            remetente.enviar(new NetworkMessage(MessageType.REJECT, "Versão de protocolo não coincide com a versão atual (" + protocolVersion + ")"));
+            remetente.enviar(new NetworkMessage(MessageType.REJECT, "CONNECTION_ERROR: Versão de protocolo não coincide com a versão atual (" + protocolVersion + ")"));
             return;
         }
 
@@ -131,7 +130,6 @@ public final class Peer {
     public void recvGetPeers(PeerConnection remetente, NetworkMessage getPeers) {
         remetente.enviar(new NetworkMessage(MessageType.PEERS_LIST, new ArrayList<>(this.knownPeers)));
     }
-
 
     // Não haverá mensagem resposta ACK por parte do recebedor de PEERS_LIST
     // decisão de troca de confiança <-> desempenho
@@ -159,11 +157,6 @@ public final class Peer {
         @SuppressWarnings("unchecked")
         List<Block> payload = (List<Block>) blockchainCopy.getPayload();
         
-        if (this.blockchain == null) {
-            this.blockchain = new Blockchain(DIFICULDADE, payload);
-            return;
-        }
-        
         ReplaceResult troca = this.blockchain.tryReplaceChain(payload);
         if (!troca.accepted()) {
             remetente.enviar(new NetworkMessage(MessageType.REJECT, troca.reason()));
@@ -177,9 +170,14 @@ public final class Peer {
     }
     
     public void recvReject(PeerConnection remetente, NetworkMessage reject) {
-        // TODO: será que to REJECT deve fechar a conexão? em resposta à uma recusa de HELLO sim, mas o REJECT também pode acontecer em uma falha de validação de blockchain, e não sei se é a melhor estratégia.
-        // PROBLEMA, não tem muito como verificar qual a razão da recusa aqui sem ter estabelecido um protocolo de motivos de REJECT, atualmente é só uma string arbitrária. seria uma extensão às instruções do trabalho
-        desconectar(remetente);
+        String payload = (String) reject.getPayload();
+        // prefixamos todo payload de mensagens do tipo REJECT com "CONNECTION_ERROR" ou "CHAIN_ERROR" para permitir a tomada de decisão se o recebimento de um reject deve encerrar a conexão ou não
+        if (payload.startsWith("CONNECTION_ERROR")) {
+            desconectar(remetente);
+        } else if (payload.startsWith("CHAIN_ERROR")) {
+            log("Rejeitada blockchain de " + connections.get(remetente) + " pois: " + payload.substring("CHAIN_ERROR".length()));
+        }
+        
         return;
     }
 
@@ -289,10 +287,20 @@ public final class Peer {
         return connected;
     }
 
+    public void broadcastMsg(NetworkMessage  msg) {
+        for (PeerConnection con : this.connections.keySet()) {
+            con.enviar(msg);
+        }
+    }
+
     public static void main(String[] args) throws IOException, InterruptedException {
         System.out.println("=====================================================");
         System.out.println("DIGITE O NÚMERO PARA VER A INFORMAÇÃO CORRESPONDENTE:");
-        System.out.println("[1] - VER CONEXÕES  [0] - DESCONECTAR ");
+        System.out.println("[1] - VER CONEXÕES");
+        System.out.println("[2] - BROADCAST GET_BLOCKCHAIN");
+        System.out.println("[3] - VER BLOCKCHAIN");
+        System.out.println("[4] - MINERAR BLOCO");
+        System.out.println("[0] - DESCONECTAR ");
         System.out.println("=====================================================\n");
 
         Peer A;
@@ -309,6 +317,12 @@ public final class Peer {
                     System.out.println("LISTA DE PEERS: " + A.knownPeers);
                     System.out.println("      CONEXÕES: " + A.connections);
                     System.out.println("");
+                } else if (linha.equals("2")) {
+                    A.broadcastMsg(new NetworkMessage(MessageType.GET_BLOCKCHAIN, null));
+                } else if (linha.equals("3")) {
+                    A.log(A.getBlockchain().toString());
+                } else if (linha.equals("4")) {
+                    A.getBlockchain().addBlock("BLOCO TESTE", null);
                 } else if (linha.equals("0")) {
                     break;
                 }
