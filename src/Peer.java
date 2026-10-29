@@ -124,6 +124,7 @@ public final class Peer {
         this.addKnownPeer(ip, port);
         this.addConnection(ip, port, remetente);
         remetente.setAcknowledged();
+        remetente.setConnectionId(ipPortToId(ip, port));
         remetente.enviar(new NetworkMessage(MessageType.ACK, null));
     }
 
@@ -212,6 +213,7 @@ public final class Peer {
         try {
             Socket newPeer = new Socket(ip, port);
             PeerConnection con = new PeerConnection(this, newPeer);
+            con.setConnectionId(ipPortToId(ip, port));
             con.enviar(msgHello());
             this.addConnection(ip, port, con);
         } catch (IOException e) {

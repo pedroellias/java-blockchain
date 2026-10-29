@@ -9,6 +9,7 @@ class PeerConnection implements Runnable {
     private Peer parent;
     private Socket socket;
     private final String socketId; // usado pelo hashCode(), deve ser imutável
+    private String connectionId; // vai receber a porta correta em Peer.recvHello(), apenas para imprimir nos logs
     private BufferedReader in;
     private PrintWriter out;
     private boolean acknowledged;
@@ -18,7 +19,8 @@ class PeerConnection implements Runnable {
         this.socket = socket;
         this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.out = new PrintWriter(socket.getOutputStream(), true);
-        this.socketId = socket.getInetAddress().getHostAddress() + ":" + socket.getPort();
+        this.socketId = Peer.ipPortToId(socket.getInetAddress().getHostAddress(), socket.getPort());
+        this.connectionId = socket.getInetAddress().getHostAddress() + ":porta_desconhecida" ;
         this.acknowledged = false;
         
         new Thread(this, "PeerConnection").start();
@@ -26,13 +28,13 @@ class PeerConnection implements Runnable {
     
     public void enviar(NetworkMessage msg) {
         String msgCodificada = Base64.getEncoder().encodeToString(msg.serializar());
-        parent.log("Enviando para " + socketId + ": " + msg);
+        parent.log("Enviando para " + connectionId + ": " + msg);
         out.println(msgCodificada);
     }
     
     @Override
     public void run() {
-        parent.log("Nova conexão com: " + socketId);
+        parent.log("Nova conexão com: " + connectionId);
         try {
             while (parent.isConnected()) {
                 String s = in.readLine();
@@ -40,7 +42,7 @@ class PeerConnection implements Runnable {
                 
                 byte[] dados = Base64.getDecoder().decode(s);
                 NetworkMessage msg = NetworkMessage.desserializar(dados);
-                parent.log("Recebido de " + socketId + ": " + msg);
+                parent.log("Recebido de " + connectionId + ": " + msg);
                 parent.recv(this, msg);
             }
         } catch (IOException e) {
@@ -49,7 +51,7 @@ class PeerConnection implements Runnable {
         if (parent.isConnected()) {
             parent.desconectar(this);
         }
-        parent.log("Encerrando conexão com: " + socketId);
+        parent.log("Encerrando conexão com: " + connectionId);
     }
 
     public Socket getSocket() {
@@ -62,6 +64,10 @@ class PeerConnection implements Runnable {
 
     public boolean isAcknowledged() {
         return acknowledged;
+    }
+
+    public void setConnectionId(String connectionId) {
+        this.connectionId = connectionId;
     }
 
     @Override
