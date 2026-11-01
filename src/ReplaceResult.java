@@ -9,4 +9,9 @@ public record ReplaceResult(boolean accepted, String reason) implements Serializ
     public static ReplaceResult reject(String reason) {
         return new ReplaceResult(false, reason);
     }
+
+    @Override
+    public String toString() {
+        return (accepted ? "ACEITA" : "REJEITADA") + " (" + reason + ")";
+    }
 }

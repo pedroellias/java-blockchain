@@ -20,6 +20,23 @@ public class StringUtil {
             throw new RuntimeException(e);
         }
     }
+    /**
+     * Primeiros 12 caracteres de um hash, só para exibição em logs ("-" se vazio).
+     * Nunca use isto para comparar hashes: a comparação sempre usa o hash completo.
+     */
+    public static String shortHash(String hash) {
+        if (hash == null) return "null";
+        if (hash.isEmpty()) return "-";
+        return hash.length() <= 12 ? hash : hash.substring(0, 12);
+    }
+
+    /** Texto em uma linha só, cortado em no máximo 'max' caracteres (termina em "..." se foi cortado). */
+    public static String shorten(String text, int max) {
+        if (text == null) return "null";
+        String umaLinha = text.replace('\r', ' ').replace('\n', ' ');
+        if (umaLinha.length() <= max) return umaLinha;
+        return umaLinha.substring(0, Math.max(0, max - 3)) + "...";
+    }
+// esse string util veio do PDF que o alexandre mandou pra gente
 }
 
-// esse string util veio do PDF que o alexandre mandou pra gente

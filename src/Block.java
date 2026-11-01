@@ -79,15 +79,15 @@ public final class Block implements Serializable {
     }
     @Override
     public String toString() {
-        return "Block{" +
-                "hash='" + hash + '\'' +
-                ", indice=" + indice +
-                ", nonce=" + nonce +
-                ", previousHash='" + previousHash + '\'' +
-                ", data='" + data + '\'' +
-                ", timeStamp=" + timeStamp +
-                '}';
+        // Uma linha só e hashes abreviados (12 chars): é isto que aparece nos logs de rede,
+        // onde BLOCKCHAIN_COPY imprime a lista inteira de blocos. Para o hash completo use getHash().
+        return "Block#" + indice
+                + "{hash=" + StringUtil.shortHash(hash)
+                + ", prev=" + StringUtil.shortHash(previousHash)
+                + ", nonce=" + nonce
+                + ", data=\"" + StringUtil.shorten(data, 40) + "\"}";
     }
+
 }
 
 //classe do bloco funcionando com hash calculado usando o sha256
