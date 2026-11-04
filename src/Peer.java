@@ -1,6 +1,5 @@
 import java.util.List;
 import java.util.Map;
-import java.util.Scanner;
 import java.util.Set;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -11,11 +10,8 @@ import java.util.HashSet;
 import java.util.Hashtable;
 
 public final class Peer {
-    public static final String SEED_IP = "127.0.0.1";
-    public static final int SEED_PORTA = 6767;
-    public static final String SEED_PROTOCOL_VERSION = "V1.0";
-    // MUDAR ESSA VARIÁVEL PARA CADA COMPUTADOR NA APRESENTAÇÃO
-    public static final String IP_PADRÃO = "127.0.0.1";
+    public final String seedIp;
+    public final int seedPorta;
 
     public static final int DIFICULDADE = 2;
 
@@ -26,37 +22,39 @@ public final class Peer {
     private String ip;
     private int port;
     private ServerSocket server;
-    private Server listener;
 
     private volatile boolean connected;
 
     private Blockchain blockchain;
 
-    private Peer(String name, String protocolVersion, String ip, int port) throws IOException {
+    private Peer(String name, String protocolVersion, String localIp, int localPort, String seedIp, int seedPorta) throws IOException {
         this.name = name;
         this.protocolVersion = protocolVersion;
         this.knownPeers = new HashSet<>();
         this.connections = new Hashtable<>();
+
+        this.seedIp = seedIp;
+        this.seedPorta = seedPorta;
         
-        this.server = new ServerSocket(port, 10, InetAddress.getByName(ip));
+        this.server = new ServerSocket(localPort, 10, InetAddress.getByName(localIp));
         this.ip = server.getInetAddress().getHostAddress();
         this.port = server.getLocalPort();
 
-        this.addKnownPeer(SEED_IP, SEED_PORTA);
+        this.addKnownPeer(seedIp, seedPorta);
         this.addKnownPeer(this.ip, this.port);
 
         this.connected = true;
         this.blockchain = new Blockchain(DIFICULDADE);
 
-        this.listener = new Server(this);
+        new Server(this);
     }
 
-    public Peer(String name, String protocolVersion) throws IOException {
-        this(name, protocolVersion, IP_PADRÃO,0);
+    public Peer(String name, String protocolVersion, String localIp, String seedIp, int seedPorta) throws IOException {
+        this(name, protocolVersion, localIp, 0, seedIp, seedPorta);
     }
     
-    public Peer() throws IOException {
-        this("seed", SEED_PROTOCOL_VERSION, SEED_IP, SEED_PORTA);
+    public Peer(String protocolVersion, String seedIp, int seedPorta) throws IOException {
+        this("seed", protocolVersion, seedIp, seedPorta, seedIp, seedPorta);
     }
     
     @SuppressWarnings("incomplete-switch")
@@ -176,7 +174,7 @@ public final class Peer {
         if (payload.startsWith("CONNECTION_ERROR")) {
             desconectar(remetente);
         } else if (payload.startsWith("CHAIN_ERROR")) {
-            log("Rejeitada blockchain de " + connections.get(remetente) + " pois: " + payload.substring("CHAIN_ERROR".length()));
+            log("Rejeitada blockchain de " + connections.get(remetente) + " pois: " + payload.substring("CHAIN_ERROR: ".length()));
         }
         
         return;
@@ -295,42 +293,4 @@ public final class Peer {
         }
     }
 
-    public static void main(String[] args) throws IOException, InterruptedException {
-        System.out.println("=====================================================");
-        System.out.println("DIGITE O NÚMERO PARA VER A INFORMAÇÃO CORRESPONDENTE:");
-        System.out.println("[1] - VER CONEXÕES");
-        System.out.println("[2] - BROADCAST GET_BLOCKCHAIN");
-        System.out.println("[3] - VER BLOCKCHAIN");
-        System.out.println("[4] - MINERAR BLOCO");
-        System.out.println("[0] - DESCONECTAR ");
-        System.out.println("=====================================================\n");
-
-        Peer A;
-        if (args.length == 0) {
-            A = new Peer();
-        } else {
-            A = new Peer(args[0], "V1.0");
-            A.conectar(SEED_IP, SEED_PORTA);
-        }
-        try (Scanner s = new Scanner(System.in)) {
-            while (s.hasNextLine()) {
-                String linha = s.nextLine();
-                if (linha.equals("1")) {
-                    System.out.println("LISTA DE PEERS: " + A.knownPeers);
-                    System.out.println("      CONEXÕES: " + A.connections);
-                    System.out.println("");
-                } else if (linha.equals("2")) {
-                    A.broadcastMsg(new NetworkMessage(MessageType.GET_BLOCKCHAIN, null));
-                } else if (linha.equals("3")) {
-                    A.log(A.getBlockchain().toString());
-                } else if (linha.equals("4")) {
-                    A.getBlockchain().addBlock("BLOCO TESTE", null);
-                } else if (linha.equals("0")) {
-                    break;
-                }
-            }
-        }
-        A.close();
-        Thread.sleep(2000);
-    }
 }
