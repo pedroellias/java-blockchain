@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Hashtable;
@@ -14,7 +15,7 @@ public final class Peer {
     public final String seedIp;
     public final int seedPorta;
 
-    public static final int DIFICULDADE = 2;
+    public static final int DIFICULDADE = 3;
 
     private String name;
     private String protocolVersion;
@@ -253,7 +254,11 @@ public final class Peer {
     }
     
     public void minerar(String data) {
+        log("Minerando bloco...");
+        LocalTime inicio = LocalTime.now();
         this.blockchain.addBlock(data, null);
+        LocalTime fim = LocalTime.now();
+        log("Bloco minerado (" + (fim.getNano() - inicio.getNano())*1e-9 + " segundos)");
 
         broadcastMsg(new NetworkMessage(MessageType.BLOCKCHAIN_COPY, this.blockchain.getSnapshot()));
     }
