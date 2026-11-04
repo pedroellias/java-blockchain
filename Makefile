@@ -19,7 +19,7 @@ $(PASTA_BIN):
 	mkdir -p $(PASTA_BIN)
 
 run: all
-	java -cp $(PASTA_BIN) Peer $(ARGS)
+	java -cp $(PASTA_BIN) Aplicativo $(ARGS)
 
 clean:
 	rm -rf $(PASTA_BIN)

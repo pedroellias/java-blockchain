@@ -28,7 +28,7 @@ class PeerConnection implements Runnable {
     
     public void enviar(NetworkMessage msg) {
         String msgCodificada = Base64.getEncoder().encodeToString(msg.serializar());
-        parent.log("Enviando para " + connectionId + ": " + msg);
+        parent.log("===> [" + connectionId + "]: " + msg);
         out.println(msgCodificada);
     }
     
@@ -42,7 +42,7 @@ class PeerConnection implements Runnable {
                 
                 byte[] dados = Base64.getDecoder().decode(s);
                 NetworkMessage msg = NetworkMessage.desserializar(dados);
-                parent.log("Recebido de " + connectionId + ": " + msg);
+                parent.log("<=== [" + connectionId + "]: " + msg);
                 parent.recv(this, msg);
             }
         } catch (IOException e) {

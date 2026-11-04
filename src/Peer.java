@@ -1,6 +1,7 @@
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -53,8 +54,8 @@ public final class Peer {
         this(name, protocolVersion, localIp, 0, seedIp, seedPorta);
     }
     
-    public Peer(String protocolVersion, String seedIp, int seedPorta) throws IOException {
-        this("seed", protocolVersion, seedIp, seedPorta, seedIp, seedPorta);
+    public Peer(String name, String protocolVersion, String seedIp, int seedPorta) throws IOException {
+        this(name, protocolVersion, seedIp, seedPorta, seedIp, seedPorta);
     }
     
     @SuppressWarnings("incomplete-switch")
@@ -146,6 +147,8 @@ public final class Peer {
             this.addKnownPeer(ip, port);
             this.conectar(ip, port);
         }
+
+        broadcastMsg(new NetworkMessage(MessageType.GET_BLOCKCHAIN, null));
     }
     
     public void recvGetBlockchain(PeerConnection remetente, NetworkMessage getBlockchain) {
@@ -243,8 +246,35 @@ public final class Peer {
         }
     }
 
+    private void broadcastMsg(NetworkMessage  msg) {
+        for (PeerConnection con : this.connections.keySet()) {
+            con.enviar(msg);
+        }
+    }
+    
+    public void minerar(String data) {
+        this.blockchain.addBlock(data, null);
+
+        broadcastMsg(new NetworkMessage(MessageType.BLOCKCHAIN_COPY, this.blockchain.getSnapshot()));
+    }
+
     public void log(String s) {
         System.out.println("[" + this.name + "@" + ip + ":" + port + "] " + s);
+    }
+
+    public void logKnownPeers() {
+        StringBuilder s = new StringBuilder("Peers conhecidos: \n\t| IP           | PORTA |\n");
+        for (String peer : this.knownPeers) {
+            String ip = idToIp(peer);
+            int port = idToPort(peer);
+            s.append("\t| " + ip + " ".repeat(12 - ip.length()) + " | " + port + " ".repeat(5 - String.valueOf(port).length()) + " |\n");
+        }
+        s.append("\n");
+        log(s.toString());
+    }
+    
+    public void logBlockchain() {
+        log(this.blockchain.toString());
     }
 
     public static String ipPortToId(String ip, int port) {
@@ -267,10 +297,6 @@ public final class Peer {
         return protocolVersion;
     }
  
-    public Blockchain getBlockchain() {
-        return this.blockchain;
-    }
-    
     public String getIp() {
         return ip;
     }
@@ -287,10 +313,5 @@ public final class Peer {
         return connected;
     }
 
-    public void broadcastMsg(NetworkMessage  msg) {
-        for (PeerConnection con : this.connections.keySet()) {
-            con.enviar(msg);
-        }
-    }
 
 }
