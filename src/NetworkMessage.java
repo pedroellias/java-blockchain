@@ -47,7 +47,8 @@ public class NetworkMessage implements Serializable {
 
     @Override
     public String toString() {
-        return "NetworkMessage [type=" + type + ", payload=" + payload + "]";
+        // return "NetworkMessage [type=" + type + ", payload=" + payload + "]";
+        return "NetworkMessage [type=" + type + "]";
     }
 
     public static void main(String[] args) {
