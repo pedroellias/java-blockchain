@@ -15,7 +15,7 @@ public final class Peer {
     public final String seedIp;
     public final int seedPorta;
 
-    public static final int DIFICULDADE = 5;
+    public static final int DIFICULDADE = 3;
 
     private String name;
     private String protocolVersion;
