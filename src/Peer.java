@@ -15,7 +15,7 @@ public final class Peer {
     public final String seedIp;
     public final int seedPorta;
 
-    public static final int DIFICULDADE = 3;
+    public static final int DIFICULDADE = 5;
 
     private String name;
     private String protocolVersion;
@@ -258,7 +258,10 @@ public final class Peer {
         LocalTime inicio = LocalTime.now();
         this.blockchain.addBlock(data, null);
         LocalTime fim = LocalTime.now();
-        log("Bloco minerado (" + (fim.getNano() - inicio.getNano())*1e-9 + " segundos)");
+        int s = fim.getSecond() - inicio.getSecond();
+        int ms = fim.getNano() - inicio.getNano();
+        if (ms < 0) ms += 1000_000_000;
+        log("Bloco minerado (" + s + "." + ms + " segundos)");
 
         broadcastMsg(new NetworkMessage(MessageType.BLOCKCHAIN_COPY, this.blockchain.getSnapshot()));
     }
@@ -268,11 +271,11 @@ public final class Peer {
     }
 
     public void logKnownPeers() {
-        StringBuilder s = new StringBuilder("Peers conhecidos: \n\t| IP           | PORTA |\n");
+        StringBuilder s = new StringBuilder("Peers conhecidos: \n\t| IP              | PORTA |\n");
         for (String peer : this.knownPeers) {
             String ip = idToIp(peer);
             int port = idToPort(peer);
-            s.append("\t| " + ip + " ".repeat(12 - ip.length()) + " | " + port + " ".repeat(5 - String.valueOf(port).length()) + " |\n");
+            s.append("\t| " + ip + " ".repeat(15 - ip.length()) + " | " + port + " ".repeat(5 - String.valueOf(port).length()) + " |\n");
         }
         s.append("\n");
         log(s.toString());
